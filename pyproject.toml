@@ -1,0 +1,14 @@
+[tool.ruff]
+line-length = 88
+extend-exclude = ["docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+# F821 (undefined name) is expected in notebooks/ — dbutils, spark, and
+# display are injected by the Databricks runtime, not imported.
+# E501 (line length) is left unenforced there too — the notebooks preserve
+# the original column-aligned widget/config declarations for readability.
+ignore = ["F821"]
+
+[tool.ruff.lint.per-file-ignores]
+"notebooks/*.py" = ["E501"]
