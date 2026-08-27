@@ -1,0 +1,2077 @@
+# dqx_crm_gold_checks.yml
+#
+# DQX quality checks for all 23 gold tables in crm_data.opportunities.
+# DQX version: databricks-labs-dqx[llm]==0.15.0
+#
+# Rules are grouped by table using comment headers below.
+
+
+# ============================================================
+# TABLE: gold_opportunities_fact
+# ============================================================
+
+- name: opportunity_id_unique
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: required_columns_not_null
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: is_not_null
+    for_each_column:
+      - opportunity_id
+      - opportunity_name
+      - client
+      - opportunity_number
+      - stage
+      - date_created
+      - construction_start_date
+      - construction_completion_date
+      - last_modified_date_time
+      - construction_value
+      - base_fee_percent
+
+- name: ratios_in_range
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: is_in_range
+    for_each_column:
+      - jv_ownership_percent
+      - fy1_percent_complete
+      - fy2_percent_complete
+      - fy3_percent_complete
+      - fy4_percent_complete
+      - win_probability
+      - project_probability
+      - base_fee_percent
+    arguments:
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: non_negative_numeric_fields
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: is_not_less_than
+    for_each_column:
+      - construction_value
+      - trade_labor_hours
+      - duration_months
+      - opportunity_revenue
+      - opportunity_fee
+    arguments:
+      limit: 0
+
+- name: valid_url_link
+  table_name: gold_opportunities_fact
+  criticality: warn
+  check:
+    function: regex_match
+    arguments:
+      column: url_link
+      regex: '^https?://.+'
+
+- name: opportunity_name_client_not_empty
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        TRIM(opportunity_name) != '' AND TRIM(client) != ''
+
+- name: anticipated_award_date_future_unless_booked
+  table_name: gold_opportunities_fact
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        CASE
+          WHEN stage_number IN (1,2,3,4,5) AND anticipated_booking_date IS NULL
+            THEN anticipated_award_date > CURRENT_DATE
+          WHEN stage_number IN (1,2,3,4,5) AND anticipated_booking_date IS NOT NULL
+            THEN anticipated_booking_date > CURRENT_DATE
+          ELSE TRUE
+        END
+
+- name: anticipated_booking_date_future
+  table_name: gold_opportunities_fact
+  criticality: warn
+  filter: stage_number IN (1,2,3,4,5,6)
+  check:
+    function: sql_expression
+    arguments:
+      expression: anticipated_booking_date > CURRENT_DATE
+
+- name: construction_start_date_future
+  table_name: gold_opportunities_fact
+  criticality: warn
+  filter: stage_number IN (1,2,3,4,5,6)
+  check:
+    function: sql_expression
+    arguments:
+      expression: construction_start_date > CURRENT_DATE
+
+- name: construction_completion_after_start
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: construction_completion_date > construction_start_date
+
+- name: fy_percent_complete_co_population
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        (fy1_percent_complete IS NULL AND fy2_percent_complete IS NULL
+         AND fy3_percent_complete IS NULL AND fy4_percent_complete IS NULL)
+        OR (fy1_percent_complete IS NOT NULL AND fy2_percent_complete IS NOT NULL
+         AND fy3_percent_complete IS NOT NULL AND fy4_percent_complete IS NOT NULL)
+
+- name: fy_percent_complete_cumulative_order
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: (fy2_percent_complete IS NULL OR fy1_percent_complete IS NULL OR fy2_percent_complete >= fy1_percent_complete) AND (fy3_percent_complete IS NULL OR fy2_percent_complete IS NULL OR fy3_percent_complete >= fy2_percent_complete) AND (fy4_percent_complete IS NULL OR fy3_percent_complete IS NULL OR fy4_percent_complete >= fy3_percent_complete)
+
+- name: win_project_probability_not_null_and_in_range
+  table_name: gold_opportunities_fact
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        win_probability IS NOT NULL AND win_probability BETWEEN 0.0 AND 1.0
+        AND project_probability IS NOT NULL AND project_probability BETWEEN 0.0 AND 1.0
+
+- name: win_project_probability_not_zero
+  table_name: gold_opportunities_fact
+  criticality: warn
+  filter: stage_number BETWEEN 2 AND 5
+  check:
+    function: sql_expression
+    arguments:
+      expression: NOT (win_probability = 0.0 OR project_probability = 0.0)
+
+- name: stage_number_observed_range
+  table_name: gold_opportunities_fact
+  criticality: warn
+  check:
+    function: is_in_range
+    arguments:
+      column: stage_number
+      min_limit: 1
+      max_limit: 8
+
+- name: latest_days_in_stage_not_negative
+  table_name: gold_opportunities_fact
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: latest_days_in_stage
+      limit: 0
+
+
+# ============================================================
+# TABLE: gold_opportunity_fiscal_time_allocation
+# ============================================================
+
+- name: fiscal_alloc_opportunity_id_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: fiscal_alloc_fiscal_year_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_year
+
+- name: fiscal_alloc_opportunity_id_fiscal_year_unique
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - fiscal_year
+
+- name: fiscal_alloc_allocation_ratio_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: allocation_ratio
+
+- name: fiscal_alloc_allocation_ratio_range
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_in_range
+    arguments:
+      column: allocation_ratio
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: fiscal_alloc_duration_days_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: duration_days
+
+- name: fiscal_alloc_duration_days_positive
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: duration_days
+      limit: 1
+
+- name: fiscal_alloc_opportunity_duration_days_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_duration_days
+
+- name: fiscal_alloc_opportunity_duration_days_positive
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: opportunity_duration_days
+      limit: 1
+
+- name: fiscal_alloc_duration_not_exceed_opportunity_duration
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: duration_days <= opportunity_duration_days
+
+- name: fiscal_alloc_last_modified_date_time_not_null
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: last_modified_date_time
+
+- name: fiscal_alloc_allocation_ratio_mathematically_consistent
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: ABS(allocation_ratio - (duration_days / opportunity_duration_days)) < 0.01
+
+- name: fiscal_alloc_duration_days_not_greater_than_366
+  table_name: gold_opportunity_fiscal_time_allocation
+  criticality: error
+  check:
+    function: is_not_greater_than
+    arguments:
+      column: duration_days
+      limit: 366
+
+
+# ============================================================
+# TABLE: gold_manual_fact_percent_complete
+# ============================================================
+
+- name: manual_pct_opportunity_id_not_null
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: manual_pct_fiscal_year_not_null
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_year
+
+- name: manual_pct_approach_not_null
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: approach
+
+- name: manual_pct_composite_key_unique
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - fiscal_year
+        - approach
+
+- name: manual_pct_cumulative_percent_complete_not_null
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: cumulative_percent_complete
+
+- name: manual_pct_last_modified_date_time_not_null
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: last_modified_date_time
+
+- name: manual_pct_cumulative_percent_complete_range
+  table_name: gold_manual_fact_percent_complete
+  criticality: error
+  check:
+    function: is_in_range
+    arguments:
+      column: cumulative_percent_complete
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: manual_pct_last_modified_date_time_not_in_future
+  table_name: gold_manual_fact_percent_complete
+  criticality: warn
+  check:
+    function: is_not_in_future
+    arguments:
+      column: last_modified_date_time
+
+
+# ============================================================
+# TABLE: gold_manual_revenue_projections
+# ============================================================
+
+- name: manual_rev_opportunity_id_not_null
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: manual_rev_fiscal_year_not_null
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_year
+
+- name: manual_rev_approach_not_null
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: approach
+
+- name: manual_rev_composite_key_unique
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - fiscal_year
+        - approach
+
+- name: manual_rev_fytd_projected_revenue_not_negative
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_revenue
+      limit: 0
+
+- name: manual_rev_fytd_projected_construction_value_not_negative
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_construction_value
+      limit: 0
+
+- name: manual_rev_fytd_projected_fee_not_negative
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_fee
+      limit: 0
+
+- name: manual_rev_cumulative_percent_complete_range
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_in_range
+    arguments:
+      column: cumulative_percent_complete
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: manual_rev_completion_after_start
+  table_name: gold_manual_revenue_projections
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: construction_completion_date > construction_start_date
+
+- name: manual_rev_ingestion_timestamp_not_null
+  table_name: gold_manual_revenue_projections
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: ingestion_timestamp
+
+
+# ============================================================
+# TABLE: gold_revenue_projection
+# ============================================================
+
+- name: rev_proj_opportunity_id_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: rev_proj_forecast_target_first_of_month_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: forecast_target_first_of_month
+
+- name: rev_proj_month_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: month
+
+- name: rev_proj_month_range
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_in_range
+    arguments:
+      column: month
+      min_limit: 1
+      max_limit: 12
+
+- name: rev_proj_fiscal_year_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_year
+
+- name: rev_proj_fiscal_quarter_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_quarter
+
+- name: rev_proj_fiscal_quarter_range
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_in_range
+    arguments:
+      column: fiscal_quarter
+      min_limit: 1
+      max_limit: 4
+
+- name: rev_proj_mtd_revenue_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: mtd_projected_revenue
+
+- name: rev_proj_mtd_revenue_not_negative
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_revenue
+      limit: 0
+
+- name: rev_proj_mtd_construction_value_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: mtd_projected_construction_value
+
+- name: rev_proj_mtd_construction_value_not_negative
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_construction_value
+      limit: 0
+
+- name: rev_proj_mtd_fee_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: mtd_projected_fee
+
+- name: rev_proj_mtd_fee_not_negative
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_fee
+      limit: 0
+
+- name: rev_proj_jtd_revenue_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: jtd_projected_revenue
+
+- name: rev_proj_jtd_revenue_not_negative
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: jtd_projected_revenue
+      limit: 0
+
+- name: rev_proj_event_ingestion_timestamp_not_null
+  table_name: gold_revenue_projection
+  criticality: error
+  check:
+    function: is_not_null
+    for_each_column:
+      - event_timestamp
+      - ingestion_timestamp
+
+- name: rev_proj_fiscal_year_alignment
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: fiscal_year = CASE WHEN month >= 4 THEN year + 1 ELSE year END
+
+- name: rev_proj_mtd_revenue_not_exceed_construction_value
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: mtd_projected_revenue <= mtd_projected_construction_value
+
+- name: rev_proj_mtd_fee_not_exceed_revenue
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: mtd_projected_fee <= mtd_projected_revenue
+
+- name: rev_proj_jtd_revenue_not_exceed_construction_value
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: jtd_projected_revenue <= jtd_projected_construction_value
+
+- name: rev_proj_jtd_fee_not_exceed_revenue
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: jtd_projected_fee <= jtd_projected_revenue
+
+- name: rev_proj_month_matches_forecast_target
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: month = MONTH(forecast_target_first_of_month)
+
+- name: rev_proj_year_matches_forecast_target
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: year = YEAR(forecast_target_first_of_month)
+
+- name: rev_proj_ingestion_not_before_event
+  table_name: gold_revenue_projection
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: ingestion_timestamp >= event_timestamp
+
+
+# ============================================================
+# TABLE: gold_revenue_projection_comparison_fiscal_year
+# ============================================================
+
+- name: rev_comp_fy_opportunity_id_not_null
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: rev_comp_fy_fiscal_year_not_null
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: fiscal_year
+
+- name: rev_comp_fy_approach_not_null_or_empty
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: approach
+
+- name: rev_comp_fy_composite_key_unique
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - fiscal_year
+        - approach
+
+- name: rev_comp_fy_fytd_projected_revenue_not_negative
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_revenue
+      limit: 0
+
+- name: rev_comp_fy_fytd_projected_construction_value_not_negative
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_construction_value
+      limit: 0
+
+- name: rev_comp_fy_fytd_projected_fee_not_negative
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: fytd_projected_fee
+      limit: 0
+
+- name: rev_comp_fy_event_timestamp_not_null
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: event_timestamp
+
+- name: rev_comp_fy_revenue_not_exceed_construction_value
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: fytd_projected_revenue <= fytd_projected_construction_value
+
+- name: rev_comp_fy_fee_not_exceed_revenue
+  table_name: gold_revenue_projection_comparison_fiscal_year
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: fytd_projected_fee <= fytd_projected_revenue
+
+
+# ============================================================
+# TABLE: gold_revenue_projection_comparison_monthly
+# ============================================================
+
+- name: rev_comp_monthly_opportunity_id_not_null
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: rev_comp_monthly_forecast_target_first_of_month_not_null
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: forecast_target_first_of_month
+
+- name: rev_comp_monthly_approach_not_null_or_empty
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: approach
+
+- name: rev_comp_monthly_composite_key_unique
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - forecast_target_first_of_month
+        - approach
+
+- name: rev_comp_monthly_mtd_projected_revenue_not_negative
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_revenue
+      limit: 0
+
+- name: rev_comp_monthly_mtd_projected_construction_value_not_negative
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_construction_value
+      limit: 0
+
+- name: rev_comp_monthly_mtd_projected_fee_not_negative
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: mtd_projected_fee
+      limit: 0
+
+- name: rev_comp_monthly_event_timestamp_not_null
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: event_timestamp
+
+- name: rev_comp_monthly_revenue_not_exceed_construction_value
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: mtd_projected_revenue <= mtd_projected_construction_value
+
+- name: rev_comp_monthly_forecast_target_first_of_month_normalized
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: forecast_target_first_of_month = DATE_TRUNC('MONTH', forecast_target_first_of_month)
+
+- name: rev_comp_monthly_fee_not_exceed_revenue
+  table_name: gold_revenue_projection_comparison_monthly
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: mtd_projected_fee <= mtd_projected_revenue
+
+
+# ============================================================
+# TABLE: gold_opportunity_history
+# ============================================================
+
+- name: opp_history_opportunity_history_id_not_null
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_history_id
+
+- name: opp_history_opportunity_history_id_unique
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_history_id
+
+- name: opp_history_opportunity_id_not_null
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: opp_history_modify_date_not_null
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: modify_date
+
+- name: opp_history_modify_date_not_in_future
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_in_future
+    arguments:
+      column: modify_date
+
+- name: opp_history_stage_id_not_null
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: stage_id
+
+- name: opp_history_ingestion_timestamp_not_null
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: ingestion_timestamp
+
+- name: opp_history_iwin_probability_range
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_in_range
+    arguments:
+      column: iwin_probability
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: opp_history_iproject_probability_range
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_in_range
+    arguments:
+      column: iproject_probability
+      min_limit: 0.0
+      max_limit: 1.0
+
+- name: opp_history_ifee_not_negative
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: ifee
+      limit: 0
+
+- name: opp_history_iconstruction_value_not_negative
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: iconstruction_value
+      limit: 0
+
+- name: opp_history_estimated_selection_date_reasonable
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: estimated_selection_date IS NULL OR ingestion_timestamp IS NULL OR estimated_selection_date <= ingestion_timestamp + INTERVAL 10 YEARS
+
+- name: opp_history_gross_revenue_std_not_negative
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: gross_revenue_std
+      limit: 0
+
+- name: opp_history_ifactored_fee_not_negative
+  table_name: gold_opportunity_history
+  criticality: error
+  check:
+    function: is_not_less_than
+    arguments:
+      column: ifactored_fee
+      limit: 0
+
+- name: opp_history_lead_money_3_not_negative
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: lead_money_3
+      limit: 0
+
+- name: opp_history_days_in_stage_not_negative
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: days_in_stage
+      limit: 0
+
+- name: opp_history_stage_name_not_null_or_empty
+  table_name: gold_opportunity_history
+  criticality: warn
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: stage_name
+
+
+# ============================================================
+# TABLE: gold_gng_scd
+# ============================================================
+
+
+- name: gng_scd_opportunity_id_not_null
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: gng_scd_valid_from_not_null
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: valid_from
+
+- name: gng_scd_current_flag_not_null
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: current_flag
+
+- name: gng_scd_composite_key_unique
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - valid_from
+
+- name: gng_scd_type2_integrity
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: (current_flag = TRUE AND valid_to IS NULL) OR (current_flag = FALSE AND valid_to IS NOT NULL)
+
+- name: gng_scd_validity_period_ordered
+  table_name: gold_gng_scd
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: valid_to IS NULL OR valid_to > valid_from
+
+- name: gng_scd_max_one_active_record
+  table_name: gold_gng_scd
+  criticality: error
+  filter: current_flag = TRUE
+  check:
+    function: is_aggr_not_greater_than
+    arguments:
+      column: opportunity_id
+      aggr_type: count
+      group_by:
+        - opportunity_id
+      limit: 1
+
+- name: gng_scd_valid_from_not_in_future
+  table_name: gold_gng_scd
+  criticality: warn
+  check:
+    function: is_not_in_future
+    arguments:
+      column: valid_from
+
+- name: gng_scd_go_no_go_required_from_stage_4
+  table_name: gold_gng_scd
+  criticality: warn
+  filter: stage_number >= 4 AND current_flag = TRUE
+  check:
+    function: sql_expression
+    arguments:
+      expression: >-
+        go_no_go_recommendation IS NOT NULL
+        AND TRIM(go_no_go_recommendation) != ''
+
+
+- name: gng_scd_go_no_go_valid_value_by_stage
+  table_name: gold_gng_scd
+  criticality: warn
+  filter: go_no_go_recommendation IS NOT NULL AND current_flag = TRUE
+  check:
+    function: sql_expression
+    arguments:
+      expression: >-
+        CASE
+          WHEN stage_number BETWEEN 1 AND 3
+            THEN go_no_go_recommendation IN ('Conditional', 'Discuss')
+          WHEN stage_number >= 4
+            THEN go_no_go_recommendation IN ('Conditional', 'Discuss', 'Go', 'No-Go')
+          ELSE TRUE
+        END
+
+# ============================================================
+# TABLE: gold_dim_project_location
+# ============================================================
+
+
+- name: dim_location_opportunity_id_not_null
+  table_name: gold_dim_project_location
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_location_opportunity_id_unique
+  table_name: gold_dim_project_location
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_location_fk_opportunity_id
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_location_firm_id_not_null
+  table_name: gold_dim_project_location
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: firm_id
+
+- name: dim_location_state_not_null_or_empty
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: state
+
+- name: dim_location_country_not_null_or_empty
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: country
+
+- name: dim_location_city_not_null_or_empty
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: city
+
+- name: dim_location_address1_not_null_or_empty
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: address1
+
+- name: dim_location_latitude_is_latitude
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_latitude
+    arguments:
+      column: latitude
+
+- name: dim_location_longitude_is_longitude
+  table_name: gold_dim_project_location
+  criticality: warn
+  check:
+    function: is_longitude
+    arguments:
+      column: longitude
+
+
+# ============================================================
+# TABLE: gold_dim_studio
+# ============================================================
+
+- name: dim_studio_composite_key_unique
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - firm_org_id
+        - opportunity_id
+
+- name: dim_studio_fk_opportunity_id
+  table_name: gold_dim_studio
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_studio_opportunity_id_not_null
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_studio_studio_id_not_null
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: studio_id
+
+- name: dim_studio_studio_name_not_null_or_empty
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: studio_name IS NOT NULL AND TRIM(studio_name) != ''
+
+- name: dim_studio_studio_acronym_not_null_or_empty
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: studio_acronym IS NOT NULL AND TRIM(studio_acronym) != ''
+
+- name: dim_studio_firm_org_id_not_null
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: firm_org_id
+
+- name: dim_studio_firm_id_not_null
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: firm_id
+
+- name: dim_studio_firm_id_equals_expected_firm
+  table_name: gold_dim_studio
+  criticality: error
+  check:
+    function: is_equal_to
+    arguments:
+      column: firm_id
+      value: 1  # placeholder — set to your organization's identifier in the source system
+
+
+# ============================================================
+# TABLE: gold_dim_market
+# ============================================================
+
+- name: dim_market_practice_area_id_not_null
+  table_name: gold_dim_market
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: practice_area_id
+
+- name: dim_market_opportunity_id_unique
+  table_name: gold_dim_market
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_market_fk_opportunity_id
+  table_name: gold_dim_market
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_market_opportunity_id_not_null
+  table_name: gold_dim_market
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_market_market_not_null_or_empty
+  table_name: gold_dim_market
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: market IS NOT NULL AND TRIM(market) != ''
+
+- name: dim_market_market_in_master_data_list
+  table_name: gold_dim_market
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        market IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_market
+          WHERE master_data_type = 'Market' AND is_active = 'Active'
+        )
+
+- name: dim_market_practice_area_id_observed_range
+  table_name: gold_dim_market
+  criticality: warn
+  check:
+    function: is_in_range
+    arguments:
+      column: practice_area_id
+      min_limit: 4192
+      max_limit: 166915
+
+
+
+# ============================================================
+# TABLE: gold_dim_office
+# ============================================================
+
+- name: dim_office_office_id_not_null
+  table_name: gold_dim_office
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: office_id
+
+- name: dim_office_opportunity_id_not_null
+  table_name: gold_dim_office
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_office_composite_key_unique
+  table_name: gold_dim_office
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - office_id
+        - opportunity_id
+
+- name: dim_office_fk_opportunity_id
+  table_name: gold_dim_office
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_office_office_name_not_null_or_empty
+  table_name: gold_dim_office
+  criticality: error
+  check:
+    function: is_not_null_and_not_empty
+    arguments:
+      column: office_name
+
+- name: dim_office_office_name_in_master_data_list
+  table_name: gold_dim_office
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        office_name IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_office
+          WHERE master_data_type = 'Office' AND is_active = 'Active'
+        )
+
+# ============================================================
+# TABLE: gold_dim_division
+# ============================================================
+
+- name: dim_division_division_id_not_null
+  table_name: gold_dim_division
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: division_id
+
+- name: dim_division_opportunity_id_not_null
+  table_name: gold_dim_division
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_division_composite_key_unique
+  table_name: gold_dim_division
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - division_id
+        - opportunity_id
+
+- name: dim_division_fk_opportunity_id
+  table_name: gold_dim_division
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_division_business_unit_not_null_or_empty
+  table_name: gold_dim_division
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: business_unit IS NOT NULL AND TRIM(business_unit) != ''
+
+- name: dim_division_business_unit_in_master_data_list
+  table_name: gold_dim_division
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        business_unit IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_business_unit
+          WHERE master_data_type = 'Business Unit' AND is_active = 'Active'
+        )
+
+- name: dim_division_division_id_not_negative
+  table_name: gold_dim_division
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: division_id
+      limit: 0
+
+- name: dim_division_opportunity_id_not_negative
+  table_name: gold_dim_division
+  criticality: warn
+  check:
+    function: is_not_less_than
+    arguments:
+      column: opportunity_id
+      limit: 0
+
+
+# ============================================================
+# TABLE: gold_dim_go_recommendation
+# ============================================================
+
+- name: dim_gorec_opportunity_id_not_null
+  table_name: gold_dim_go_recommendation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_gorec_opportunity_id_unique
+  table_name: gold_dim_go_recommendation
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_gorec_fk_opportunity_id
+  table_name: gold_dim_go_recommendation
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_gorec_recommendation_not_null_or_empty
+  table_name: gold_dim_go_recommendation
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: go_no_go_recommendation IS NOT NULL AND TRIM(go_no_go_recommendation) != ''
+
+- name: dim_gorec_recommendation_valid_value
+  table_name: gold_dim_go_recommendation
+  criticality: warn
+  check:
+    function: is_in_list
+    arguments:
+      column: go_no_go_recommendation
+      allowed:
+        - Discuss
+        - Go
+        - No-Go
+
+- name: dim_gorec_snapshot_timestamp_not_null
+  table_name: gold_dim_go_recommendation
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: snapshot_timestamp
+
+- name: dim_gorec_snapshot_timestamp_not_in_future
+  table_name: gold_dim_go_recommendation
+  criticality: error
+  check:
+    function: is_not_in_future
+    arguments:
+      column: snapshot_timestamp
+
+
+
+# ============================================================
+# TABLE: gold_dim_deliverymethod
+# ============================================================
+
+- name: dim_delivery_opportunity_id_not_null
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_delivery_opportunity_id_unique
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_delivery_fk_opportunity_id
+  table_name: gold_dim_deliverymethod
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_delivery_method_not_null_or_empty
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: delivery_method IS NOT NULL AND TRIM(delivery_method) != ''
+
+- name: dim_delivery_method_in_master_data_list
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        CASE delivery_method
+          WHEN 'DBB' THEN 'Design-Bid-Build'
+          WHEN 'CM at Risk' THEN 'Construction Manager at Risk'
+          WHEN 'DB' THEN 'Design-Build'
+          WHEN 'EPC' THEN 'Engineering, Procurement, Construction'
+          WHEN 'IPD' THEN 'Integrated Project Delivery'
+          WHEN 'CM Agency' THEN 'Construction Manager Agency'
+          ELSE delivery_method
+        END IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_delivery_method
+          WHERE master_data_type = 'Delivery Method' AND is_active = 'Active'
+        )
+
+- name: dim_delivery_last_updated_at_not_null
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: last_updated_at
+
+- name: dim_delivery_last_updated_at_not_in_future
+  table_name: gold_dim_deliverymethod
+  criticality: error
+  check:
+    function: is_not_in_future
+    arguments:
+      column: last_updated_at
+
+
+# ============================================================
+# TABLE: gold_dim_contracttype
+# ============================================================
+
+- name: dim_contract_opportunity_id_not_null
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_contract_opportunity_id_unique
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_contract_fk_opportunity_id
+  table_name: gold_dim_contracttype
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_contract_type_not_null_or_empty
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: contract_type IS NOT NULL AND TRIM(contract_type) != ''
+
+- name: dim_contract_type_in_master_data_list
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        CASE contract_type
+          WHEN 'TM' THEN 'Time and Materials'
+          WHEN 'TM NTE' THEN 'Time and Materials Not to Exceed'
+          ELSE contract_type
+        END IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_contract_type
+          WHERE master_data_type = 'Contract Type' AND is_active = 'Active'
+        )
+
+- name: dim_contract_last_updated_at_not_null
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: last_updated_at
+
+- name: dim_contract_last_updated_at_not_in_future
+  table_name: gold_dim_contracttype
+  criticality: error
+  check:
+    function: is_not_in_future
+    arguments:
+      column: last_updated_at
+
+# ============================================================
+# TABLE: gold_dim_primarycategory
+# ============================================================
+
+- name: dim_primarycat_opportunity_id_not_null
+  table_name: gold_dim_primarycategory
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_primarycat_opportunity_id_unique
+  table_name: gold_dim_primarycategory
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_primarycat_fk_opportunity_id
+  table_name: gold_dim_primarycategory
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_primarycat_category_not_null_or_empty
+  table_name: gold_dim_primarycategory
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: primary_category IS NOT NULL AND TRIM(primary_category) != ''
+
+- name: dim_primarycat_category_consistent_casing
+  table_name: gold_dim_primarycategory
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: >-
+        SIZE(COLLECT_SET(primary_category)
+        OVER (PARTITION BY LOWER(TRIM(primary_category)))) <= 1
+
+# ============================================================
+# TABLE: gold_dim_servicetype
+# ============================================================
+
+- name: dim_servicetype_opportunity_id_not_null
+  table_name: gold_dim_servicetype
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_servicetype_opportunity_id_unique
+  table_name: gold_dim_servicetype
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_servicetype_fk_opportunity_id
+  table_name: gold_dim_servicetype
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_servicetype_has_self_perform_not_null
+  table_name: gold_dim_servicetype
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: has_self_perform
+
+
+# ============================================================
+# TABLE: gold_dim_selfperform
+# ============================================================
+
+- name: dim_selfperform_self_perform_id_not_null
+  table_name: gold_dim_selfperform
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: self_perform_id
+
+- name: dim_selfperform_opportunity_id_not_null
+  table_name: gold_dim_selfperform
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_selfperform_composite_key_unique
+  table_name: gold_dim_selfperform
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - self_perform_id
+
+- name: dim_selfperform_fk_opportunity_id
+  table_name: gold_dim_selfperform
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_selfperform_discipline_not_null_or_empty
+  table_name: gold_dim_selfperform
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: self_perform_discipline IS NOT NULL AND TRIM(self_perform_discipline) != ''
+
+- name: dim_selfperform_discipline_in_master_data_list
+  table_name: gold_dim_selfperform
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: |-
+        CASE self_perform_discipline
+          WHEN 'CO - Concrete/Resteel' THEN 'Concrete'
+          WHEN 'RG - Rigging' THEN 'Rigging'
+          WHEN 'CV - Civil' THEN 'Civil'
+          WHEN 'IN - Interiors' THEN 'Interiors'
+          WHEN 'ST - Steel' THEN 'Structural Steel'
+          WHEN 'BM - Boilermaker' THEN 'Boilermaker'
+          WHEN 'GT - General Trades (Builders)' THEN 'General Trades (Builders)'
+          WHEN 'CR - Controlled Environments' THEN 'Controlled Environments'
+          WHEN 'SM - Solar Mechanical' THEN 'Solar Mechanical'
+          WHEN 'RF - Refractory' THEN 'Refractory'
+          ELSE self_perform_discipline
+        END IN (
+          SELECT term_name FROM __PREFIX__enterprise.master_data.gold_self_perform_discipline
+          WHERE master_data_type = 'Self-perform Discipline' AND is_active = 'Active'
+        )
+
+
+
+# ============================================================
+# TABLE: gold_dim_clienttype
+# ============================================================
+
+- name: dim_clienttype_opportunity_id_not_null
+  table_name: gold_dim_clienttype
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_clienttype_opportunity_id_unique
+  table_name: gold_dim_clienttype
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_clienttype_fk_opportunity_id
+  table_name: gold_dim_clienttype
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_clienttype_not_null_or_empty
+  table_name: gold_dim_clienttype
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: client_type IS NOT NULL AND TRIM(client_type) != ''
+
+- name: dim_clienttype_valid_value
+  table_name: gold_dim_clienttype
+  criticality: warn
+  check:
+    function: is_in_list
+    arguments:
+      column: client_type
+      allowed:
+        - Design
+        - Federal
+        - LIFTbuild
+        - Preconstruction
+        - Private
+        - Public
+        - Technology
+        - UIA (CCIP / SDI)
+
+- name: dim_clienttype_consistent_casing
+  table_name: gold_dim_clienttype
+  criticality: warn
+  check:
+    function: sql_expression
+    arguments:
+      expression: >-
+        SIZE(COLLECT_SET(client_type)
+        OVER (PARTITION BY LOWER(TRIM(client_type)))) <= 1
+
+
+# ============================================================
+# TABLE: gold_dim_priority
+# ============================================================
+
+- name: dim_priority_opportunity_id_not_null
+  table_name: gold_dim_priority
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_priority_opportunity_id_unique
+  table_name: gold_dim_priority
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+
+- name: dim_priority_fk_opportunity_id
+  table_name: gold_dim_priority
+  criticality: warn
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_priority_not_null_or_empty
+  table_name: gold_dim_priority
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: priority IS NOT NULL AND TRIM(priority) != ''
+
+- name: dim_priority_valid_range
+  table_name: gold_dim_priority
+  criticality: warn
+  check:
+    function: is_in_range
+    arguments:
+      column: priority
+      min_limit: 1
+      max_limit: 10
+
+# ============================================================
+# TABLE: gold_dim_custom_field
+# ============================================================
+
+- name: dim_customfield_opportunity_id_not_null
+  table_name: gold_dim_custom_field
+  criticality: error
+  check:
+    function: is_not_null
+    arguments:
+      column: opportunity_id
+
+- name: dim_customfield_composite_key_unique
+  table_name: gold_dim_custom_field
+  criticality: error
+  check:
+    function: is_unique
+    arguments:
+      columns:
+        - opportunity_id
+        - custom_field_label
+        - custom_field_value
+
+- name: dim_customfield_label_not_null_or_empty
+  table_name: gold_dim_custom_field
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: custom_field_label IS NOT NULL AND TRIM(custom_field_label) != ''
+
+- name: dim_customfield_fk_opportunity_id
+  table_name: gold_dim_custom_field
+  criticality: error
+  check:
+    function: foreign_key
+    arguments:
+      columns:
+        - opportunity_id
+      ref_columns:
+        - opportunity_id
+      ref_table: __PREFIX__crm_data.opportunities.gold_opportunities_fact
+
+- name: dim_customfield_value_not_null_or_empty
+  table_name: gold_dim_custom_field
+  criticality: error
+  check:
+    function: sql_expression
+    arguments:
+      expression: custom_field_value IS NOT NULL AND TRIM(custom_field_value) != ''
+

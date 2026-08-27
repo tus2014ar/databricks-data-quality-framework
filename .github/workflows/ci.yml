@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tooling
+        run: pip install ruff pyyaml
+
+      - name: Lint notebooks and tools (ruff)
+        run: ruff check .
+
+      - name: Validate DQX rule catalog schema
+        run: python tools/validate_checks.py notebooks/dqx_crm_gold_checks.yml
