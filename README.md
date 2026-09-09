@@ -46,9 +46,11 @@ During a Data Science internship at a construction industry firm, I designed and
 
 The Databricks SQL dashboard below is a real snapshot of this system running in production — same numbers as [Business impact](#business-impact) above, from the two monitoring layers described in [How it works](#how-it-works).
 
-**Gold Data Quality** — 23 tables monitored, 211 checks run, **83.4% pass rate**, **46,440 individual records flagged** for review across the dataset, 19 critical / 16 warning checks currently in violation:
+**Gold Data Quality** — 23 tables monitored, 211 checks run, **83.4% pass rate**, **46,440 individual records flagged** for review across the dataset, 19 critical / 16 warning checks currently in violation (snapshot below):
 
 ![Gold Data Quality dashboard](docs/images/dashboard-gold.png)
+
+*Update: the flagged-record count in this snapshot has since dropped to roughly 11,000 after root-causing and fixing a check that was over-firing due to a naming convention change in the source master data — the check was comparing against a stale reference name and flagging otherwise-valid records as mismatches until corrected.*
 
 **Bronze Ingestion Health** — all 17 source feeds monitored, 100% freshness health at the time of this snapshot:
 
