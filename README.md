@@ -9,7 +9,7 @@
 
 **A production data quality system that found real, previously-invisible problems in a live business pipeline — not a tutorial project.**
 
-During a Data Engineering internship at a construction industry firm, I designed and shipped an automated data quality system for a business-critical CRM pipeline that had no systematic way to catch bad or missing data. Within weeks it surfaced that the large majority of active records carried an undetected issue, and uncovered a silent completeness bug that had been causing business dashboards to underreport — problems nobody knew existed until this system went live.
+During a Data Science internship at a construction industry firm, I designed and shipped an automated data quality system for a business-critical CRM pipeline that had no systematic way to catch bad or missing data. Within weeks it surfaced that the large majority of active records carried an undetected issue, and uncovered a silent completeness bug that had been causing business dashboards to underreport — problems nobody knew existed until this system went live.
 
 *(The code in [`notebooks/`](notebooks/) is the real implementation I wrote, with identifying details masked or genericized — see [Masking notes](#masking-notes).)*
 
@@ -123,4 +123,4 @@ Catalog, schema, and column names (e.g. `crm_data.opportunities`, `gold_opportun
 
 ## Skills demonstrated
 
-`Databricks` · `PySpark` · `Python` · `SQL` · `YAML-driven rule engines` · `Unity Catalog` · `Databricks SQL Dashboards` · `Data quality engineering` · `Data pipeline architecture (medallion / bronze-silver-gold)` · `Stakeholder communication`
+`Databricks` · `PySpark` · `Python` · `SQL` · `YAML-driven rule engines` · `Unity Catalog` · `Databricks SQL Dashboards` · `Data quality engineering` · `Data pipeline architecture (medallion / bronze-silver-gold)` · `LLM-assisted rule generation (human-in-the-loop)` · `Column-level statistical profiling` · `Stakeholder communication`
